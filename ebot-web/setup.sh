@@ -1,36 +1,64 @@
 #!/bin/bash
+set -e
 
-# Check if the .installed file exists
-if [ ! -f .installed ]; then
+INSTALL_MARKER="/var/www/storage/app/.ebot_installed"
 
-    git config --global http.sslverify false
+cd /var/www
 
-    git clone https://github.com/deStrO/eBot-CSGO-Web.git temp
+if [ ! -f "$INSTALL_MARKER" ]; then
+    echo "First run: setting up eBot CS2 Web..."
 
-    cp -n -R temp/* eBot-CSGO-Web && rm -rf temp
+    # Generate app key if not set
+    APP_KEY_VALUE=$(grep "^APP_KEY=" .env 2>/dev/null | cut -d'=' -f2)
+    if [ -z "$APP_KEY_VALUE" ]; then
+        echo "Generating application key..."
+        php artisan key:generate --force --no-interaction
+    fi
 
-    cd eBot-CSGO-Web
+    # Run database migrations
+    echo "Running database migrations..."
+    php artisan migrate --force --no-interaction
 
-    sleep 30
+    # Create admin user from environment variables
+    if [ -n "$EBOT_ADMIN_LOGIN" ] && [ -n "$EBOT_ADMIN_PASSWORD" ]; then
+        echo "Creating admin user: $EBOT_ADMIN_LOGIN"
+        cat > /tmp/create_admin.php << 'PHPEOF'
+<?php
+require '/var/www/vendor/autoload.php';
+$app = require_once '/var/www/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+\App\Models\User::updateOrCreate(
+    ['username' => getenv('EBOT_ADMIN_LOGIN')],
+    [
+        'email_address' => getenv('EBOT_ADMIN_EMAIL') ?: getenv('EBOT_ADMIN_LOGIN') . '@localhost',
+        'password'      => \Illuminate\Support\Facades\Hash::make(getenv('EBOT_ADMIN_PASSWORD')),
+        'algorithm'     => 'bcrypt',
+        'is_super_admin' => true,
+        'is_active'     => true,
+    ]
+);
+echo "Admin user '" . getenv('EBOT_ADMIN_LOGIN') . "' created." . PHP_EOL;
+PHPEOF
+        php /tmp/create_admin.php
+        rm /tmp/create_admin.php
+    fi
 
-    php symfony cc
+    # Mark installed in .env
+    if grep -q "^APP_INSTALLED=" .env 2>/dev/null; then
+        sed -i "s/^APP_INSTALLED=.*/APP_INSTALLED=true/" .env
+    else
+        echo "APP_INSTALLED=true" >> .env
+    fi
 
-    php symfony doctrine:build --all --no-confirmation
-
-    php symfony guard:create-user --is-super-admin $EBOT_ADMIN_EMAIL $EBOT_ADMIN_LOGIN $EBOT_ADMIN_PASSWORD
-
-    rm -rf web/installation
-
-    cd ..
-
-    touch .installed
-
-    php-fpm
+    touch "$INSTALL_MARKER"
+    echo "Installation complete!"
 else
-    echo "eBot Web is already installed. Skipping setup."
-    cd eBot-CSGO-Web
-    php symfony cc
-    echo "Clearing cache"
-
-    php-fpm
+    echo "eBot CS2 Web already installed. Skipping setup."
 fi
+
+# Cache config, routes, and views for performance
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+exec php-fpm

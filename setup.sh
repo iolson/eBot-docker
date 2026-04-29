@@ -3,9 +3,6 @@
 red='\e[1;31m%s\e[0m\n'
 green='\e[1;32m%s\e[0m\n'
 yellow='\e[1;33m%s\e[0m\n'
-blue='\e[1;34m%s\e[0m\n'
-magenta='\e[1;35m%s\e[0m\n'
-cyan='\e[1;36m%s\e[0m\n'
 
 function yesNo() {
     while true; do
@@ -30,90 +27,76 @@ function ask_with_default() {
     fi
 }
 
-
-printf "$green" "eBot setup script"
-printf "This script will only configure the .env file. You must run or accept to run the ./configure.sh\r\n"
-
-
-if yesNo "Would you like to fresh the configs files by downloading recent configuration from github (main branch) ?"
-then
-  wget https://raw.githubusercontent.com/deStrO/eBot-CSGO-Web/master/config/app_user.yml.default -O ./etc/eBotWeb/app_user.yml
-  wget https://raw.githubusercontent.com/deStrO/eBot-CSGO-Web/master/config/databases.yml -O ./etc/eBotWeb/databases.yml
-  wget https://raw.githubusercontent.com/deStrO/eBot-CSGO/master/config/config.ini.smp -O ./etc/eBotSocket/config.ini
-fi
-
 function generatePassword() {
     openssl rand -hex 16
 }
 
+printf "$green" "eBot setup script"
+printf "This script configures the .env file. Run ./configure.sh afterwards (or accept below).\r\n"
+
 cp .env .env.bak
-if yesNo "Would you like generate a new random websocket secrets ?"
+
+if yesNo "Generate a new random WebSocket secret key?"
 then
-  NEW_WEBSOCKET_SECRET_KEY=$(generatePassword)
-  sed -i -e "s#WEBSOCKET_SECRET_KEY=.*#WEBSOCKET_SECRET_KEY=${NEW_WEBSOCKET_SECRET_KEY}#g" \
-      "$(dirname "$0")/.env"
+    NEW_WEBSOCKET_SECRET_KEY=$(generatePassword)
+    sed -i -e "s#EBOT_WEBSOCKET_SECRET_KEY=.*#EBOT_WEBSOCKET_SECRET_KEY=${NEW_WEBSOCKET_SECRET_KEY}#g" \
+        "$(dirname "$0")/.env"
 fi
 
-if  yesNo "Would you like generate new mysql random password "
+if yesNo "Generate new random MySQL passwords?"
 then
-  NEW_MYSQL_ROOT_PASSWORD=$(generatePassword)
-  NEW_MYSQL_PASSWORD=$(generatePassword)
-  sed -i -e "s#MYSQL_ROOT_PASSWORD=.*#MYSQL_ROOT_PASSWORD=${NEW_MYSQL_ROOT_PASSWORD}#g" \
-      -e "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=${NEW_MYSQL_PASSWORD}#g" \
-      "$(dirname "$0")/.env"
+    NEW_MYSQL_ROOT_PASSWORD=$(generatePassword)
+    NEW_MYSQL_PASSWORD=$(generatePassword)
+    sed -i -e "s#MYSQL_ROOT_PASSWORD=.*#MYSQL_ROOT_PASSWORD=${NEW_MYSQL_ROOT_PASSWORD}#g" \
+        -e "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=${NEW_MYSQL_PASSWORD}#g" \
+        "$(dirname "$0")/.env"
 fi
 
 source .env
 
-printf "$green" "Now doing the default configuration of eBot web"
+printf "$green" "Configuring eBot Web admin account"
 
-EBOT_ADMIN_LOGIN=$(ask_with_default "eBot Web login" $EBOT_ADMIN_LOGIN)
-EBOT_ADMIN_PASSWORD=$(ask_with_default "eBot Web password" $EBOT_ADMIN_PASSWORD)
-EBOT_ADMIN_EMAIL=$(ask_with_default "eBot Web email" $EBOT_ADMIN_EMAIL)
+EBOT_ADMIN_LOGIN=$(ask_with_default "Admin username" $EBOT_ADMIN_LOGIN)
+EBOT_ADMIN_PASSWORD=$(ask_with_default "Admin password" $EBOT_ADMIN_PASSWORD)
+EBOT_ADMIN_EMAIL=$(ask_with_default "Admin email" $EBOT_ADMIN_EMAIL)
 
 sed -i -e "s#EBOT_ADMIN_LOGIN=.*#EBOT_ADMIN_LOGIN=${EBOT_ADMIN_LOGIN}#g" \
     -e "s#EBOT_ADMIN_PASSWORD=.*#EBOT_ADMIN_PASSWORD=${EBOT_ADMIN_PASSWORD}#g" \
     -e "s#EBOT_ADMIN_EMAIL=.*#EBOT_ADMIN_EMAIL=${EBOT_ADMIN_EMAIL}#g" \
     "$(dirname "$0")/.env"
 
-printf "$green" "Now configuring IP & logs receiver"
-echo "Before going further, you need to understand the concept with the new system of logs"
-echo "The CS2 server will send the logs via HTTP to the logs-receiver"
-echo "This log receiver is exposed by docker on port 12345 by default"
-echo "On the next question, you will have to give the full web address of the logger, that have to be reachable from the server"
-echo "If your ip is 123.123.123.123, you must fill http://123.123.123.123:12345"
+printf "$green" "Configuring network addresses"
+echo "The CS2 server sends logs via UDP to the log receiver (port 12345 by default)."
+echo "This address must be reachable from your CS2 game servers."
+echo "Format: udp://PUBLIC_IP:12345  (e.g. udp://123.123.123.123:12345)"
 LOG_ADDRESS_SERVER=$(ask_with_default "Log address server" $LOG_ADDRESS_SERVER)
 
 sed -i -e "s#LOG_ADDRESS_SERVER=.*#LOG_ADDRESS_SERVER=${LOG_ADDRESS_SERVER}#g" \
     "$(dirname "$0")/.env"
 
-echo "Now, for the web part, we need to know on which IP the server will run, please fill in the IP of the server (public or lan) (format 123.123.123.123)"
-echo "You won't be able to connect to the websocket server for realtime updates if you don't give us the right IP."
-
-EBOT_IP=$(ask_with_default "Log address server" $EBOT_IP)
+echo ""
+echo "Enter the IP address of this server (public or LAN) where eBot will run."
+echo "This is used for the WebSocket connection from the browser to eBot Socket."
+EBOT_IP=$(ask_with_default "Server IP" $EBOT_IP)
 sed -i -e "s#EBOT_IP=.*#EBOT_IP=${EBOT_IP}#g" \
     "$(dirname "$0")/.env"
 
-echo "Finally, eBot now supports SSL, and then the customization of the domain name / URL for the websocket."
-echo "This SSL configuration must be done on your side (using letsencrypt by example)"
-if yesNo "Will you be using SSL ?"
+echo ""
+echo "eBot supports SSL. Configure your SSL termination externally (e.g. Let's Encrypt + reverse proxy)."
+if yesNo "Will you be using SSL for the WebSocket?"
 then
-   WEBSOCKET_URL=$(ask_with_default "What will you be using as domain / url for the websocket server" $WEBSOCKET_URL)
-   sed -i -e "s#WEBSOCKET_URL=.*#WEBSOCKET_URL=${WEBSOCKET_URL}#g" \
-       "$(dirname "$0")/.env"
-
-   echo "Don't forget to create a reverse proxy for the websocket server, that normally listen on 12360"
-   sleep 5
+    EBOT_WEBSOCKET_URL=$(ask_with_default "WebSocket URL (e.g. wss://yourdomain.com)" $EBOT_WEBSOCKET_URL)
+    sed -i -e "s#EBOT_WEBSOCKET_URL=.*#EBOT_WEBSOCKET_URL=${EBOT_WEBSOCKET_URL}#g" \
+        "$(dirname "$0")/.env"
+    echo "Don't forget to create a reverse proxy for the WebSocket server (port 12360)."
+    sleep 3
 else
-    if [ "$WEBSOCKET_URL" = "replaceme" ]
-    then
-        echo "Replacing WEBSOCKET_URL with EBOT_IP value"
-        sed -i -e "s#WEBSOCKET_URL=.*#WEBSOCKET_URL=http://${EBOT_IP}:12360#g" \
-            "$(dirname "$0")/.env"
-    fi
+    NEW_WS_URL="http://${EBOT_IP}:12360"
+    sed -i -e "s#EBOT_WEBSOCKET_URL=.*#EBOT_WEBSOCKET_URL=${NEW_WS_URL}#g" \
+        "$(dirname "$0")/.env"
 fi
 
-if yesNo "Would you like regenerate all configuration files ?"
+if yesNo "Regenerate all configuration files now?"
 then
     ./configure.sh
 fi

@@ -1,15 +1,11 @@
-FROM node:18
+FROM node:22-alpine
 
-RUN apt-get update && apt-get install -y --force-yes git && apt-get clean
-
-RUN npm install -g typescript ts-node
+RUN apk add --no-cache git
 
 WORKDIR /app
 
-RUN git clone https://github.com/deStrO/ebot-project.git
+RUN git clone --branch io-modernizer https://github.com/iolson/eBot-LogReceiver.git .
 
-WORKDIR /app/ebot-project
+RUN npm ci
 
-RUN npm install
-
-CMD ["ts-node", "src/logs-receiver", "./configs/config.json"]
+CMD ["node", "bin/app", "-c", "/configs/config.json"]
